@@ -7,7 +7,18 @@ const methodOverride = require("method-override");
 const ejsMate = require("ejs-mate");
 const wrapAsync = require("./utils/wrapAsync.js");
 const ExpressError = require("./utils/ExpressError.js");
-const { listingSchema} = require("./schema.js");
+const { listingSchema, reviewSchema} = require("./schema.js");
+const Review = require("./models/review.js");
+const session = require('express-session');
+const flash = require("connect-flash");
+const passport = require("passport");
+const LocalStrategy = require("passport-local");
+const User = require("./models/user.js");
+
+
+const listingRouter = require("./routes/listing.js");
+const reviewRouter = require("./routes/review.js");
+const userRouter = require("./routes/user.js");
 
 const MONGO_URL = "mongodb://127.0.0.1:27017/wonderLust"
 
@@ -30,66 +41,51 @@ app.use(methodOverride("_method"));
 app.engine('ejs',ejsMate);
 app.use(express.static(path.join(__dirname,"/public")));
 
-app.get("/", (req,res) => {
-    res.send("Hii i'm root");
+const sessionOptions = {
+    secret: "mysupersecretcode",
+    resave: false,
+    saveUninitialized: true,
+    cookie: {
+        expires: Date.now() + 7 * 24 * 60 * 60 * 1000,
+        maxAge:  7 * 24 * 60 * 60 * 1000,
+        httpOnly: true
+    },
+};
+
+app.use(session(sessionOptions));
+app.use(flash());
+
+app.use(passport.initialize());
+app.use(passport.session());
+passport.use(new LocalStrategy(User.authenticate()));
+
+passport.serializeUser(User.serializeUser());
+passport.deserializeUser(User.deserializeUser());
+
+// app.get("/", (req,res) => {
+//     res.send("Hii i'm root");
+// });
+
+app.use((req,res,next) => {
+    res.locals.success = req.flash("success");
+    res.locals.error = req.flash("error");
+    console.log( res.locals.success);
+    res.locals.currUser = req.user;
+    next();
 });
 
-//Index Route
-app.get("/listings", async(req,res) => {
-    const allListings = await Listing.find({})
-       res.render("listings/index.ejs", {allListings});
-});
+// app.get("/demouser", async (req,res) => {
+//     let fakeUser =new User({
+//         email: "student@gmail.com",
+//         username: "delta-student",
+//     });
+//     let registeredUser= await User.register(fakeUser, "helloworld");
+//     res.send(registeredUser);
+// });
 
- //new Route
-app.get("/listings/new", (req,res) => {
-    res.render("listings/new.ejs")
-});
-
-//Read: show route
-app.get("/listings/:id", async(req,res) => {
-    let { id } = req.params;
-    const listing = await Listing.findById(id);
-    res.render("listings/show.ejs", { listing });
-});
-
-//create Route
-app.post("/listings",
-    wrapAsync(async (req, res, next) => {
-        console.log(req.body);
-        let result = listingSchema.validate(req.body);
-        console.log(result);
-        const newListing = new Listing(req.body.listing);
-        await newListing.save();
-        res.redirect("/listings");
-})
-);
-
- //Edit Route
-app.get("/listings/:id/edit", wrapAsync(async(req,res) =>{
-    let { id } = req.params;
-    const listing = await Listing.findById(id);
-    res.render("listings/edit.ejs", { listing });
-}));
-
-//Update
-
-app.put("/listings/:id", wrapAsync(async(req,res) => {
-    let { id } = req.params;
-    if(!req.body.listing) {
-        throw new ExpressError(400, "Some valid data for listing");
-    }
-    await Listing.findByIdAndUpdate(id, {...req.body.listing});
-    res.redirect(`/listings/${id}`);
-}));
-
-
-//Delete Route
-app.delete("/listings/:id",wrapAsync(async(req,res) => {
-    let { id } = req.params;
-    let deletedListing = await Listing.findByIdAndDelete(id);
-    console.log(deletedListing);
-    res.redirect("/listings")
-}));
+app.use("/listings", listingRouter);
+app.use("/listings/:id/reviews", reviewRouter);
+app.use("/", userRouter);
 
 
 app.all("*", (req,res, next) => {
@@ -106,5 +102,3 @@ app.use((err, req, res, next) => {
 app.listen(8080, () => {
     console.log("server is listening to port 8080");
 });
-
-
